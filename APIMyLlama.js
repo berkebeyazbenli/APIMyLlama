@@ -8,22 +8,22 @@ const app = express();
 app.use(express.json());
 
 const rateLimits = new Map(); //In-memory store for rate limits
-console.log('APIMyLlama V2 is being started. Thanks for choosing Gimer Studios.'); //Startup message. Thank you guys.
+console.log('APIMyLlama V2 is being started. Thanks for choosing Gimer Studios.');
 
-//Middleware for logging requests
+// Middleware for logging requests
 app.use((req, res, next) => {
   console.log(`Received a ${req.method} request at ${req.url}`);
   next();
 });
 
-//Open a database handle
+// Open a database handle
 let db = new sqlite3.Database('./apiKeys.db', sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE, (err) => {
   if (err) {
     console.error('Error connecting to the database:', err.message);
   } else {
     console.log('Connected to the apiKeys.db database.');
 
-    //Create the apiKeys table if it doesn't exist
+    // Create the apiKeys table if it doesn't exist
     db.run(`CREATE TABLE IF NOT EXISTS apiKeys (
       key TEXT PRIMARY KEY,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -38,7 +38,7 @@ let db = new sqlite3.Database('./apiKeys.db', sqlite3.OPEN_READWRITE | sqlite3.O
       }
     });
 
-    //Create the apiUsage table if it doesn't exist
+    // Create the apiUsage table if it doesn't exist
     db.run(`CREATE TABLE IF NOT EXISTS apiUsage (
       key TEXT,
       timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -48,7 +48,7 @@ let db = new sqlite3.Database('./apiKeys.db', sqlite3.OPEN_READWRITE | sqlite3.O
       }
     });
 
-    //Create the webhooks table if it doesn't exist
+    // Create the webhooks table if it doesn't exist
     db.run(`CREATE TABLE IF NOT EXISTS webhooks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       url TEXT NOT NULL
@@ -58,7 +58,7 @@ let db = new sqlite3.Database('./apiKeys.db', sqlite3.OPEN_READWRITE | sqlite3.O
       }
     });
 
-    //Ensure the 'active' and 'description' columns exist in the 'apiKeys' table
+    // Ensure the 'active' and 'description' columns exist in the 'apiKeys' table
     db.all("PRAGMA table_info(apiKeys)", (err, rows) => {
       if (err) {
         console.error('Error checking table info:', err.message);
@@ -87,7 +87,7 @@ let db = new sqlite3.Database('./apiKeys.db', sqlite3.OPEN_READWRITE | sqlite3.O
   }
 });
 
-//Function to get Ollama server port from config file
+// Function to get Ollama server port from config file
 function getOllamaPort() {
   return new Promise((resolve, reject) => {
     if (fs.existsSync('ollamaPort.conf')) {
@@ -109,7 +109,7 @@ function getOllamaPort() {
   });
 }
 
-//Function to send a notification to all webhooks
+// Function to send a notification to all webhooks
 function sendWebhookNotification(payload) {
   db.all('SELECT url FROM webhooks', [], (err, rows) => {
     if (err) {
@@ -117,7 +117,7 @@ function sendWebhookNotification(payload) {
     } else {
       rows.forEach(row => {
         const webhookPayload = {
-          content: JSON.stringify(payload, null, 2) //Convert the payload to a pretty JSON string
+          content: JSON.stringify(payload, null, 2) // Convert the payload to a pretty JSON string
         };
 
         axios.post(row.url, webhookPayload)
@@ -132,7 +132,7 @@ function sendWebhookNotification(payload) {
   });
 }
 
-//Middleware for rate limiting and checking key activation
+// Middleware for rate limiting and checking key activation
 app.use((req, res, next) => {
   const { apikey } = req.body;
   if (!apikey) return next();
@@ -153,14 +153,14 @@ app.use((req, res, next) => {
       const rateLimit = row.rate_limit;
 
       if (!rateLimits.has(apikey)) {
-        //Initialize rate limit info for this key
+        // Initialize rate limit info for this key
         rateLimits.set(apikey, { tokens: row.tokens, lastUsed: new Date(row.last_used).getTime() });
       }
 
       const rateLimitInfo = rateLimits.get(apikey);
       const timeElapsed = currentTime - rateLimitInfo.lastUsed;
 
-      //Refill tokens if a minute has passed since the last request
+      // Refill tokens if a minute has passed since the last request
       if (timeElapsed >= minute) {
         rateLimitInfo.tokens = rateLimit;
       }
@@ -170,7 +170,7 @@ app.use((req, res, next) => {
         rateLimitInfo.lastUsed = currentTime;
         rateLimits.set(apikey, rateLimitInfo);
 
-        //Update the database
+        // Update the database
         db.run('UPDATE apiKeys SET tokens = ?, last_used = ? WHERE key = ?', [rateLimitInfo.tokens, new Date(rateLimitInfo.lastUsed).toISOString(), apikey], (err) => {
           if (err) {
             console.error('Error updating tokens and last_used:', err.message);
@@ -187,7 +187,7 @@ app.use((req, res, next) => {
   });
 });
 
-//Health check endpoint
+// Health check endpoint
 app.get('/health', (req, res) => {
   const apikey = req.query.apikey;
 
@@ -195,7 +195,7 @@ app.get('/health', (req, res) => {
     return res.status(400).json({ error: 'API key is required' });
   }
 
-  //Check if the API key exists in the database
+  // Check if the API key exists in the database
   db.get('SELECT key FROM apiKeys WHERE key = ?', [apikey], (err, row) => {
     if (err) {
       console.error('Error checking API key:', err.message);
@@ -206,23 +206,23 @@ app.get('/health', (req, res) => {
       return res.status(403).json({ error: 'Invalid API Key' });
     }
 
-    //API key is valid, return health status
+    // API key is valid, return health status
     res.json({ status: 'API is healthy', timestamp: new Date() });
   });
 });
 
-//Route for making a request to the Ollama API
+// Route for making a request to the Ollama API
 app.post('/generate', async (req, res) => {
   const { apikey, prompt, model, stream, images, raw } = req.body;
 
-  //Log the received request body for debugging
+  // Log the received request body for debugging
   console.log('Request body:', req.body);
 
   if (!apikey) {
     return res.status(400).json({ error: 'API key is required' });
   }
 
-  //Check if the API key exists in the database
+  // Check if the API key exists in the database
   db.get('SELECT key FROM apiKeys WHERE key = ?', [apikey], async (err, row) => {
     if (err) {
       console.error('Error checking API key:', err.message);
@@ -235,23 +235,26 @@ app.post('/generate', async (req, res) => {
 
     try {
       const ollamaPort = await getOllamaPort();
-      const OLLAMA_API_URL = `http://localhost:${ollamaPort}/api/generate`;
+      const OLLAMA_API_URL = `http://127.0.0.1:${ollamaPort}/api/generate`; // Doğru endpoint
 
-      //Make request to Ollama if key is valid.
+      // Make request to Ollama if key is valid
+      console.log(`Making request to Ollama API at ${OLLAMA_API_URL}`);
       axios.post(OLLAMA_API_URL, { model, prompt, stream, images, raw })
         .then(response => {
-          //Log usage in apiUsage table
+          console.log('Response from Ollama API:', response.data); // Log the response
+          
+          // Log usage in apiUsage table
           db.run('INSERT INTO apiUsage (key) VALUES (?)', [apikey], (err) => {
             if (err) console.error('Error logging API usage:', err.message);
           });
 
-          //Send webhook notifications
+          // Send webhook notifications
           sendWebhookNotification({ apikey, prompt, model, stream, images, raw, timestamp: new Date() });
 
           res.json(response.data);
         })
         .catch(error => {
-          console.error('Error making request to Ollama API:', error.message);
+          console.error('Error making request to Ollama API:', error.message); // Log the error message
           res.status(500).json({ error: 'Error making request to Ollama API' });
         });
     } catch (error) {
@@ -269,7 +272,7 @@ function startServer(port) {
   server = app.listen(currentPort, () => console.log(`Server running on port ${currentPort}`));
 }
 
-//Close the database connection when the application is closed
+// Close the database connection when the application is closed
 process.on('SIGINT', () => {
   db.close((err) => {
     if (err) {
@@ -281,7 +284,7 @@ process.on('SIGINT', () => {
   });
 });
 
-//Create CLI
+// Create CLI
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout
